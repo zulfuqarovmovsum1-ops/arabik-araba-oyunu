@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gece Yolu – Araba Oyunu</title>
+<style>
+:root{--bg:#10141c;--ink:#f3efe6;--sun:#ffb629;--road:#2a2f3a;--line:#e9e3d2;color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--bg:#e6e1d4;--ink:#1b1f29;--sun:#d9480f;--road:#3a3f4b;--line:#f3efe6;color-scheme:light}}
+:root[data-theme="dark"]{--bg:#10141c;--ink:#f3efe6;--sun:#ffb629}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden;touch-action:none}
+.bar{display:flex;gap:18px;font-size:18px;font-weight:700;width:min(92vw,360px);justify-content:space-between}
+.bar span b{color:var(--sun)}
+.wrap{position:relative;width:min(92vw,360px);aspect-ratio:3/4;max-height:70vh}
+canvas{width:100%;height:100%;display:block;border-radius:14px;background:var(--road);box-shadow:0 0 0 3px var(--ink)}
+.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;background:rgba(10,12,18,.78);border-radius:14px;color:#f3efe6;padding:20px}
+.ov h1{margin:0;font-size:34px;letter-spacing:.5px}
+.ov p{margin:0;opacity:.85;font-size:15px;max-width:26ch}
+button{font:inherit;font-weight:700;font-size:18px;padding:10px 26px;border:0;border-radius:10px;background:var(--sun);color:#16181f;cursor:pointer}
+button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.pad{display:none;gap:14px;width:min(92vw,360px)}
+.pad button{flex:1;padding:14px 0;font-size:24px}
+@media (pointer:coarse){.pad{display:flex}}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="bar"><span>Skor: <b id="sc">0</b></span><span>En iyi: <b id="hi">0</b></span><span>Hız: <b id="sp">0</b></span></div>
+<div class="wrap">
+<canvas id="c" width="360" height="480"></canvas>
+<div class="ov" id="ov">
+<h1 id="t">Gece Yolu</h1>
+<p id="m">Ok tuşları veya A / D ile şerit değiştir. Trafiğe çarpma, altınları topla.</p>
+<button id="go">Başla</button>
+</div>
+</div>
+<div class="pad"><button id="L" aria-label="Sola">◀</button><button id="R" aria-label="Sağa">▶</button></div>
+<script>
+const cv=document.getElementById('c'),x=cv.getContext('2d'),W=360,H=480,LANES=3,LW=W/ (LANES+0.6),RX=(W-LW*LANES)/2;
+const ov=document.getElementById('ov'),sc=document.getElementById('sc'),hi=document.getElementById('hi'),sp=document.getElementById('sp'),t=document.getElementById('t'),m=document.getElementById('m');
+let best=0;try{best=+localStorage.getItem('gy-best')||0}catch(e){}
+hi.textContent=best;
+const laneX=l=>RX+LW*l+LW/2;
+let car,obs,coins,score,speed,run,off,spawn,last;
+const colors=['#e63946','#4cc9f0','#8ac926','#b5179e','#f77f00'];
+function reset(){car={l:1,px:laneX(1),w:34,h:62};obs=[];coins=[];score=0;speed=3;off=0;spawn=0;run=true;last=performance.now()}
+function drawCar(px,py,w,h,col,player){
+ x.save();x.translate(px,py);
+ x.fillStyle='rgba(0,0,0,.35)';x.fillRect(-w/2+3,-h/2+4,w,h);
+ x.fillStyle=col;x.beginPath();x.roundRect(-w/2,-h/2,w,h,8);x.fill();
+ x.fillStyle='rgba(20,28,40,.85)';x.fillRect(-w/2+5,player?-h/2+12:h/2-26,w-10,14);
+ x.fillRect(-w/2+5,player?h/2-20:-h/2+8,w-10,10);
+ if(player){x.fillStyle='#fff6c2';x.fillRect(-w/2+3,-h/2,7,4);x.fillRect(w/2-10,-h/2,7,4)}
+ x.restore()}
+function move(d){if(!run)return;car.l=Math.max(0,Math.min(LANES-1,car.l+d))}
+addEventListener('keydown',e=>{if(['ArrowLeft','a','A'].includes(e.key)){move(-1);e.preventDefault()}
+ if(['ArrowRight','d','D'].includes(e.key)){move(1);e.preventDefault()}
+ if((e.key==='Enter'||e.key===' ')&&!run){start()}});
+document.getElementById('L').onclick=()=>move(-1);
+document.getElementById('R').onclick=()=>move(1);
+let tx=null;cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX});
+cv.addEventListener('touchend',e=>{if(tx===null)return;const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>20)move(d>0?1:-1);tx=null});
+function start(){reset();ov.classList.add('hide');requestAnimationFrame(loop)}
+document.getElementById('go').onclick=start;
+function over(){run=false;if(score>best){best=score;hi.textContent=best;try{localStorage.setItem('gy-best',best)}catch(e){}}
+ t.textContent='Çarptın!';m.textContent='Skorun: '+score+'. Bir daha dene.';document.getElementById('go').textContent='Tekrar oyna';ov.classList.remove('hide')}
+function loop(now){
+ if(!run)return;
+ const dt=Math.min(2,(now-last)/16.7);last=now;
+ speed=Math.min(10,speed+0.0015*dt);off=(off+speed*dt)%40;
+ car.px+=(laneX(car.l)-car.px)*0.25*dt;
+ spawn-=speed*dt;
+ if(spawn<=0){spawn=150+Math.random()*90-speed*6;
+  const l=Math.floor(Math.random()*LANES);
+  obs.push({l,y:-70,w:34,h:62,v:speed*(0.45+Math.random()*0.3),c:colors[Math.floor(Math.random()*colors.length)]});
+  if(Math.random()<.6)coins.push({l:(l+1+Math.floor(Math.random()*2))%LANES,y:-90})}
+ obs.forEach(o=>o.y+=(speed-o.v*0.0+0)*dt*0.8+o.v*0.2*dt);
+ coins.forEach(c=>c.y+=speed*dt);
+ obs=obs.filter(o=>o.y<H+80);coins=coins.filter(c=>c.y<H+40);
+ const cy=H-90;
+ for(const o of obs){if(Math.abs(laneX(o.l)-car.px)<(o.w+car.w)/2-4&&Math.abs(o.y-cy)<(o.h+car.h)/2-6){draw(cy);return over()}}
+ coins=coins.filter(c=>{if(Math.abs(laneX(c.l)-car.px)<24&&Math.abs(c.y-cy)<36){score+=25;return false}return true});
+ score+=Math.round(speed*dt*0.12*10)/10;score=Math.floor(score*10)/10;
+ sc.textContent=Math.floor(score);sp.textContent=Math.round(speed*20)+' km/s';
+ draw(cy);requestAnimationFrame(loop)}
+function draw(cy){
+ x.clearRect(0,0,W,H);
+ x.fillStyle='#1f6f3f';x.fillRect(0,0,RX,H);x.fillRect(W-RX,0,RX,H);
+ x.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--road')||'#2a2f3a';x.fillRect(RX,0,W-2*RX,H);
+ x.fillStyle='#e9e3d2';
+ for(let i=1;i<LANES;i++)for(let y=-40+off;y<H;y+=40)x.fillRect(RX+LW*i-2,y,4,22);
+ x.fillRect(RX-3,0,3,H);x.fillRect(W-RX,0,3,H);
+ coins.forEach(c=>{x.fillStyle='#ffd23f';x.beginPath();x.arc(laneX(c.l),c.y,10,0,7);x.fill();x.fillStyle='#b8860b';x.fillRect(laneX(c.l)-2,c.y-5,4,10)});
+ obs.forEach(o=>drawCar(laneX(o.l),o.y,o.w,o.h,o.c,false));
+ drawCar(car.px,cy,car.w,car.h,'#ffb629',true)}
+reset();run=false;draw(H-90);
+</script>
+</body>
+</html>
